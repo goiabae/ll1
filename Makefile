@@ -9,28 +9,23 @@ RM=rm -rf
 
 BIN=ll1
 
-OBJ=$(addsuffix .o,$(BIN))
-SRC=$(addsuffix .c,$(BIN))
-HDR=$(addsuffix .h,$(BIN))
-YIN=$(addsuffix .y,$(BIN))
-
 all: $(BIN)
 
-$(BIN): $(OBJ)
+$(BIN): ll1.o grammar.o
 	@echo " LD   $@"
 	@$(CC) $(CFLAGS) -o $@ $^
 
-$(OBJ): $(SRC)
+%.o: %.c
 	@echo " CC   $^"
 	@$(CC) $(CFLAGS) -o $@ -c $^
 
-$(SRC): $(YIN)
+%.c: %.y
 	@echo " YACC $^"
 	@$(YACC) $(YFLAGS) -o $@ $^
 
 clean:
 	@echo " CLEAN"
-	@$(RM) $(BIN) $(OBJ) $(SRC) $(HDR)
+	@$(RM) ll1.o ll1.c grammar.o
 	@$(RM) $(BIN).dSYM
 
 again: clean all
@@ -38,4 +33,3 @@ again: clean all
 lines:
 	@echo " WC"
 	@wc -l $(YIN)
-
