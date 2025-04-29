@@ -6,7 +6,7 @@
  */
 
 /* enable verbose errors and debugging information in bison. */
-%error-verbose
+%define parse.error verbose
 %debug
 
 %{
