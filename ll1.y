@@ -9,6 +9,18 @@
 %define parse.error verbose
 %debug
 
+%define api.pure full
+%locations
+
+%lex-param {file_t file}
+%parse-param {file_t file}
+
+%code requires {
+typedef struct file_t {
+  FILE* descriptor;
+  char* name;
+} file_t;
+}
 %{
 #define _POSIX_C_SOURCE 200809L
 
@@ -28,13 +40,11 @@
 #define STR_TOKEN "%token"
 
 /* pre-declare functions used by yyparse(). */
-void yyerror (const char *msg);
-int yylex (void);
+void yyerror (YYLTYPE* yylloc, file_t file, const char *msg);
+int yylex (YYSTYPE* yylval, YYLTYPE* yylloc, file_t file);
 
 /* pre-declare variables used by derp(), main(), yyparse() */
-const char *yyfname, *argv0;
-int yylineno;
-FILE *yyin;
+const char *argv0;
 
 /* data structure for holding grammar symbol information.
  */
@@ -222,17 +232,18 @@ int main (int argc, char **argv) {
   if (argc != 2)
     derp("input filename required");
 
-  yylineno = 1;
-  yyfname = argv[1];
-  yyin = fopen(yyfname, "r");
+  file_t file = {
+    .name = argv[1],
+    .descriptor = fopen(argv[1], "r")
+  };
 
-  if (!yyin)
-    derp("%s: %s", yyfname, strerror(errno));
+  if (!file.descriptor)
+    derp("%s: %s", file.name, strerror(errno));
 
-  if (yyparse())
-    derp("%s: parse failed", yyfname);
+  if (yyparse(file))
+    derp("%s: parse failed", file.name);
 
-  fclose(yyin);
+  fclose(file.descriptor);
 
   derives_empty();
   first();
@@ -997,19 +1008,19 @@ bool conflicts (void) {
 
 /* yyerror(): error reporting function called by bison on parse errors.
  */
-void yyerror (const char *msg) {
-  fprintf(stderr, "%s: error: %s:%d: %s\n", argv0, yyfname, yylineno, msg);
+void yyerror (YYLTYPE* yylloc, file_t file, const char *msg) {
+  fprintf(stderr, "%s: error: %s:%d: %s\n", argv0, file.name, yylloc->first_line, msg);
 }
 
 /* yylex(): lexical analysis function that breaks the input grammar file
  * into a stream of tokens for the bison parser.
  */
-int yylex (void) {
+int yylex (YYSTYPE* yylval, YYLTYPE* yylloc, file_t file) {
   int c, cprev, ntext;
   char *text;
 
   while (1) {
-    c = fgetc(yyin);
+    c = fgetc(file.descriptor);
     text = NULL;
     ntext = 0;
 
@@ -1021,35 +1032,35 @@ int yylex (void) {
       case '|': return OR;
 
       case '\n':
-        yylineno++;
+        yylloc->first_line++;
         break;
     }
 
     if (c == '/') {
-      c = fgetc(yyin);
+      c = fgetc(file.descriptor);
 
       if (c == '/') {
         while (c && c != '\n')
-          c = fgetc(yyin);
+          c = fgetc(file.descriptor);
 
         if (c == EOF) return c;
-        yylineno++;
+        yylloc->first_line++;
       }
       else if (c == '*') {
         cprev = c;
-        c = fgetc(yyin);
+        c = fgetc(file.descriptor);
 
         while (c && (cprev != '*' || c != '/')) {
           cprev = c;
-          c = fgetc(yyin);
+          c = fgetc(file.descriptor);
 
-          if (c == '\n') yylineno++;
+          if (c == '\n') yylloc->first_line++;
         }
 
         if (c == EOF) return c;
       }
       else
-        fseek(yyin, -1, SEEK_CUR);
+        fseek(file.descriptor, -1, SEEK_CUR);
     }
 
     if (c == '\'') {
@@ -1057,11 +1068,11 @@ int yylex (void) {
       if (!text)
         derp("unable to allocate token buffer");
 
-      text[0] = fgetc(yyin);
+      text[0] = fgetc(file.descriptor);
       text[1] = '\0';
 
-      c = fgetc(yyin);
-      yylval.id = text;
+      c = fgetc(file.descriptor);
+      yylval->id = text;
       if (c == '\'' || text[0] != '\'')
         return ID;
 
@@ -1073,10 +1084,10 @@ int yylex (void) {
       if (!text)
         derp("unable to allocate token buffer");
 
-      text[0] = fgetc(yyin);
+      text[0] = fgetc(file.descriptor);
       text[1] = '\0';
 
-      c = fgetc(yyin);
+      c = fgetc(file.descriptor);
       while ((c != '\"')) {
         text = (char*) realloc(text, (++ntext + 1) * sizeof(char));
         if (!text)
@@ -1085,10 +1096,10 @@ int yylex (void) {
         text[ntext - 1] = c;
         text[ntext] = '\0';
 
-        c = fgetc(yyin);
+        c = fgetc(file.descriptor);
       }
 
-      yylval.id = text;
+      yylval->id = text;
 
       if (c == '\"')
         return ALIAS;
@@ -1104,7 +1115,7 @@ int yylex (void) {
       text[0] = c;
       text[1] = '\0';
 
-      c = fgetc(yyin);
+      c = fgetc(file.descriptor);
       while ((c >= 'a' && c <= 'z') ||
              (c >= 'A' && c <= 'Z') ||
              (c >= '0' && c <= '9') ||
@@ -1116,12 +1127,12 @@ int yylex (void) {
         text[ntext - 1] = c;
         text[ntext] = '\0';
 
-        c = fgetc(yyin);
+        c = fgetc(file.descriptor);
       }
 
-      fseek(yyin, -1, SEEK_CUR);
+      fseek(file.descriptor, -1, SEEK_CUR);
 
-      yylval.id = text;
+      yylval->id = text;
       if (text[0] == '%') {
         if (strcmp(text, STR_EPSILON) == 0)
           return EPSILON;
