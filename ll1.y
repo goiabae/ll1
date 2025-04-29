@@ -14,6 +14,7 @@
 
 %lex-param {file_t file}
 %parse-param {file_t file}
+%parse-param {grammar_t* g}
 
 %code requires {
   #include "grammar.h"
@@ -26,7 +27,7 @@
 #include "grammar.h"
 
 /* pre-declare functions used by yyparse(). */
-void yyerror (YYLTYPE* yylloc, file_t file, const char *msg);
+void yyerror (YYLTYPE* yylloc, file_t file, grammar_t* g, const char *msg);
 int yylex (YYSTYPE* yylval, YYLTYPE* yylloc, file_t file);
 %}
 
@@ -76,13 +77,13 @@ directive_list
 
 directive
   : TOKEN ID ALIAS
-  { aliases_add($ID, $ALIAS); }
+  { aliases_add(g, $ID, $ALIAS); }
   | TOKEN ID
   ;
 
 rules : rules rule | rule ;
 
-rule : ID DERIVES productions END { prods_add(symbols_add($1, 0), $3); };
+rule : ID DERIVES productions END { prods_add(g, symbols_add(g, $1, 0), $3); };
 
 productions : productions OR symbols { $$ = symvv_add($1, $3); }
             | symbols                { $$ = symvv_new($1);     };
@@ -90,6 +91,6 @@ productions : productions OR symbols { $$ = symvv_add($1, $3); }
 symbols : symbols symbol { $$ = symv_add($1, $2); }
         | symbol         { $$ = symv_new($1);     };
 
-symbol : ID      { $$ = symbols_add($1, 1); }
-       | EPSILON { $$ = symbols_add($1, 1); }
-       | ALIAS   { $$ = symbols_add(aliased_from($1), 1); };
+symbol : ID      { $$ = symbols_add(g, $1, 1); }
+       | EPSILON { $$ = symbols_add(g, $1, 1); }
+       | ALIAS   { $$ = symbols_add(g, aliased_from(g, $1), 1); };

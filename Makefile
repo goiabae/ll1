@@ -1,9 +1,9 @@
 
 CC=gcc
-CFLAGS=-g -Wall -Wextra -std=c99
+CFLAGS=-O0 -g -Wall -Wextra -std=c11
 
 YACC=bison
-YFLAGS=-d
+YFLAGS=-d -Wall -Wdangling-alias
 
 RM=rm -rf
 
@@ -11,7 +11,7 @@ BIN=ll1
 
 all: $(BIN)
 
-$(BIN): ll1.o grammar.o
+$(BIN): ll1.o grammar.o main.o
 	@echo " LD   $@"
 	@$(CC) $(CFLAGS) -o $@ $^
 
@@ -25,7 +25,8 @@ $(BIN): ll1.o grammar.o
 
 clean:
 	@echo " CLEAN"
-	@$(RM) ll1.o ll1.c grammar.o
+	@$(RM) ll1.o ll1.c grammar.o ll1.h main.o
+	@$(RM) $(BIN)
 	@$(RM) $(BIN).dSYM
 
 again: clean all
