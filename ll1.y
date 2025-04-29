@@ -18,6 +18,7 @@
 #include <stdarg.h>
 #include <string.h>
 #include <errno.h>
+#include <stdbool.h>
 
 /* include the (bison-generated) main header file. */
 #include "ll1.h"
@@ -97,7 +98,7 @@ void derives_empty (void);
 void first (void);
 void follow (void);
 void predict (void);
-void conflicts (void);
+bool conflicts (void);
 
 /* pre-declare symbol array functions. */
 int symv_len (int *sv);
@@ -223,12 +224,12 @@ int main (int argc, char **argv) {
   printf("Predict sets:\n\n");
   prods_print_predict();
 
-  conflicts();
+  bool has_conflicts = conflicts();
 
   symbols_free();
   prods_free();
 
-  return 0;
+  return (has_conflicts) ? 1 : 0;
 }
 
 /* symbol_is_empty(): return whether a symbol (specified by the one-based
@@ -880,8 +881,8 @@ void conflicts_print (int id1, int id2, int *overlap) {
 
 /* conflicts(): print all LL(1) conflicts in a grammar, if any.
  */
-void conflicts (void) {
-  int header = 0;
+bool conflicts (void) {
+  bool header = false;
 
   for (int i = 0; i < n_symbols; i++) {
     if (symbols[i].is_terminal)
@@ -902,7 +903,7 @@ void conflicts (void) {
         if (symv_len(u)) {
           if (!header) {
             printf("Conflicts:\n\n");
-            header = 1;
+            header = true;
           }
 
           conflicts_print(j1, j2, u);
@@ -917,6 +918,7 @@ void conflicts (void) {
     printf("There were conflicts.\nGrammar is not LL(1)\n  :(\n\n");
   else
     printf("No conflicts, grammar is LL(1)\n  :D :D :D\n\n");
+  return header;
 }
 
 /* yyerror(): error reporting function called by bison on parse errors.
