@@ -25,6 +25,7 @@
 
 /* define a string that we should recognize as 'epsilon'. */
 #define STR_EPSILON "%empty"
+#define STR_TOKEN "%token"
 
 /* pre-declare functions used by yyparse(). */
 void yyerror (const char *msg);
@@ -68,6 +69,15 @@ struct production {
   int *predict;
 };
 
+struct alias {
+  char* to;
+  char* from;
+};
+
+/* aliases table. */
+struct alias* aliases;
+int alias_count;
+
 /* symbol table. */
 struct symbol *symbols;
 int n_symbols;
@@ -75,6 +85,12 @@ int n_symbols;
 /* production list. */
 struct production *prods;
 int n_prods;
+
+/* pre-declare aliases table functions. */
+void aliases_init(void);
+void aliases_free(void);
+void aliases_add(char* symbol, char* alias);
+char* aliased_from(char* name);
 
 /* pre-declare symbol table functions. */
 void symbols_init (void);
@@ -126,7 +142,8 @@ int **symvv_add (int **vv, int *v);
 }
 
 /* define the set of terminal symbols to parse. */
-%token EPSILON ID DERIVES END OR
+%token TOKEN EPSILON
+%token ID DERIVES END OR ALIAS
 
 /* set up attribute types of nonterminals. */
 %type<sym> symbol
@@ -134,11 +151,32 @@ int **symvv_add (int **vv, int *v);
 %type<symvv> productions
 
 /* set up attribute types of terminals. */
-%type<id> ID EPSILON
+%type<id> ID EPSILON ALIAS
 
 %%
 
-grammar : rules ;
+grammar
+  : opt_preamble rules
+  ;
+
+opt_preamble
+  : opt_directive_list
+  ;
+
+opt_directive_list
+  : %empty
+  | directive_list
+  ;
+
+directive_list
+  : directive opt_directive_list
+  ;
+
+directive
+  : TOKEN ID ALIAS
+  { aliases_add($ID, $ALIAS); }
+  | TOKEN ID
+  ;
 
 rules : rules rule | rule ;
 
@@ -151,7 +189,8 @@ symbols : symbols symbol { $$ = symv_add($1, $2); }
         | symbol         { $$ = symv_new($1);     };
 
 symbol : ID      { $$ = symbols_add($1, 1); }
-       | EPSILON { $$ = symbols_add($1, 1); };
+       | EPSILON { $$ = symbols_add($1, 1); }
+       | ALIAS   { $$ = symbols_add(aliased_from($1), 1); };
 
 %%
 
@@ -176,6 +215,7 @@ void derp (const char *fmt, ...) {
 int main (int argc, char **argv) {
   symbols_init();
   prods_init();
+  aliases_init();
 
   argv0 = argv[0];
 
@@ -226,10 +266,38 @@ int main (int argc, char **argv) {
 
   bool has_conflicts = conflicts();
 
+  aliases_free();
   symbols_free();
   prods_free();
 
   return (has_conflicts) ? 1 : 0;
+}
+
+void aliases_init(void) {
+  aliases = malloc(sizeof(struct alias)*1);
+  alias_count = 0;
+}
+
+void aliases_free(void) {
+  free(aliases);
+}
+
+void aliases_add(char* symbol, char* alias) {
+  aliases = realloc(aliases, sizeof(struct alias)*(alias_count+1));
+  aliases[alias_count].from = symbol;
+  aliases[alias_count].to = alias;
+  alias_count++;
+}
+
+/* aliased_from(): returns a reference pointer to the string name was aliased to.
+ * If name isn't an alias to another symbol, return name as is.
+ */
+char* aliased_from(char* name) {
+  for (int i = 0; i < alias_count; i++) {
+    if (strcmp(aliases[i].to, name) == 0)
+      return strdup(aliases[i].from);
+  }
+  return name;
 }
 
 /* symbol_is_empty(): return whether a symbol (specified by the one-based
@@ -313,8 +381,14 @@ int symbols_add (char *name, int is_terminal) {
  */
 void symbols_print (int is_terminal) {
   for (int i = 0; i < n_symbols; i++) {
-    if (symbols[i].is_terminal == is_terminal)
-      printf("  %s\n", symbols[i].name);
+    if (symbols[i].is_terminal == is_terminal) {
+      printf("  %s", symbols[i].name);
+      for (int j = 0; j < alias_count; j++) {
+        if (strcmp(aliases[j].from, symbols[i].name) == 0)
+          printf(" (aliases to \"%s\")", aliases[j].to);
+      }
+      printf("\n");
+    }
   }
 }
 
@@ -994,6 +1068,34 @@ int yylex (void) {
       free(text);
     }
 
+    if (c == '\"') {
+      text = (char*) malloc((++ntext + 1) * sizeof(char));
+      if (!text)
+        derp("unable to allocate token buffer");
+
+      text[0] = fgetc(yyin);
+      text[1] = '\0';
+
+      c = fgetc(yyin);
+      while ((c != '\"')) {
+        text = (char*) realloc(text, (++ntext + 1) * sizeof(char));
+        if (!text)
+          derp("unable to reallocate token buffer");
+
+        text[ntext - 1] = c;
+        text[ntext] = '\0';
+
+        c = fgetc(yyin);
+      }
+
+      yylval.id = text;
+
+      if (c == '\"')
+        return ALIAS;
+
+      free(text);
+    }
+
     if (c == '%' || (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')) {
       text = (char*) malloc((++ntext + 1) * sizeof(char));
       if (!text)
@@ -1023,6 +1125,8 @@ int yylex (void) {
       if (text[0] == '%') {
         if (strcmp(text, STR_EPSILON) == 0)
           return EPSILON;
+        else if (strcmp(text, STR_TOKEN) == 0)
+          return TOKEN;
         else
           free(text);
       }
@@ -1031,4 +1135,3 @@ int yylex (void) {
     }
   }
 }
-
